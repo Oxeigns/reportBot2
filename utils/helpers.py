@@ -1,7 +1,8 @@
 # utils/helpers.py
 import re
 import asyncio
-from pyrogram import Client, functions, types
+from pyrogram import Client
+from pyrogram.raw import functions, types # Change this line
 
 def parse_target(url: str):
     """Link se Chat ID aur Message ID nikalne ke liye logic"""
