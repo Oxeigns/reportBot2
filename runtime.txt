@@ -1,0 +1,35 @@
+{
+  "name": "Ultimate OxyReport Bot v3",
+  "description": "The most advanced Telegram reporting bot with MongoDB, Sudo management, and Live Panel.",
+  "keywords": ["telegram", "report", "bot", "mongodb", "pyrogram"],
+  "repository": "https://github.com/yourusername/your-repo-name",
+  "logo": "https://telegra.ph/file/your-logo-id.jpg",
+  "env": {
+    "API_ID": {
+      "description": "Aapka Telegram API ID (my.telegram.org se).",
+      "required": true
+    },
+    "API_HASH": {
+      "description": "Aapka Telegram API HASH.",
+      "required": true
+    },
+    "BOT_TOKEN": {
+      "description": "Aapka Bot Token (@BotFather se).",
+      "required": true
+    },
+    "OWNER_ID": {
+      "description": "Aapki Numerical Telegram ID.",
+      "required": true
+    },
+    "MONGO_URL": {
+      "description": "Aapka MongoDB Cluster URL (Atlas).",
+      "required": true
+    }
+  },
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "eco"
+    }
+  }
+}
