@@ -1,11 +1,10 @@
-# main.py - Refined Version
+# main.py
 import asyncio
 import os
 import sys
-from pyrogram import Client, filters, types
+from pyrogram import Client, filters # 'types' ko yahan se hata dein
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from pyrogram.errors import UserNotParticipant, FloodWait
-
 from config import Config
 from database.mongo import (
     add_session, get_sessions, delete_all_sessions, 
