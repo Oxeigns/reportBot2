@@ -59,8 +59,8 @@ async def verify_user(uid):
         # 2. Contribution Check (Min 3)
         if not sudo:
             count = await get_user_contribution_count(uid)
-            if count < 3:
-                return "MIN_CONTRIBUTION", 3 - count
+            if count < 1:
+                return "MIN_CONTRIBUTION", 1 - count
         
         return "OK", None
     except Exception as e:
