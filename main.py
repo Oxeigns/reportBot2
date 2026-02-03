@@ -14,9 +14,11 @@ from utils.helpers import parse_target, auto_join, get_progress_card
 from utils.user_guide import GUIDE_TEXT
 from report import send_single_report
 
+# Logging setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Client Initialization
 app = Client("OxyBot", api_id=Config.API_ID, api_hash=Config.API_HASH, bot_token=Config.BOT_TOKEN, in_memory=True)
 U_STATE = {}
 
@@ -37,7 +39,7 @@ async def verify_user(uid):
                 return "JOIN_REQUIRED", f_str.replace("@", "")
             except: pass
         
-        # 2. Contribution Check (Min 3 sessions required from user)
+        # 2. Contribution Check (Min 3 sessions required from user to unlock)
         if not sudo:
             count = await get_user_contribution_count(uid)
             if count < 3:
@@ -51,6 +53,7 @@ async def start_handler(client, message: Message):
     uid = message.from_user.id
     status, data = await verify_user(uid)
     
+    # Force Subscribe Rejection
     if status == "JOIN_REQUIRED":
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{data}")]])
         return await message.reply_text("🚫 **Access Denied!**\nJoin our channel and click /start again.", reply_markup=kb)
@@ -76,7 +79,7 @@ async def start_handler(client, message: Message):
 async def cb_handler(client, cb: CallbackQuery):
     uid, data = cb.from_user.id, cb.data
     
-    # Instant Buttons (No verification lag)
+    # 1. Instant Buttons (Guide & Back)
     if data == "open_guide":
         return await cb.edit_message_text(GUIDE_TEXT, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="start_back")]]))
     
@@ -84,47 +87,58 @@ async def cb_handler(client, cb: CallbackQuery):
         U_STATE.pop(uid, None)
         return await start_handler(client, cb.message)
 
-    # Security Verification
+    # 2. Common Security Verification
     status, val = await verify_user(uid)
-    if status == "JOIN_REQUIRED": return await cb.answer(f"🚫 Join @{val} first!", True)
+    if status == "JOIN_REQUIRED": 
+        return await cb.answer(f"🚫 Join @{val} first!", show_alert=True)
     if status == "MIN_CONTRIBUTION" and data not in ["add_sess_p", "manage_sessions"]:
-        return await cb.answer(f"🚫 Contribute {val} more sessions to unlock!", True)
+        return await cb.answer(f"🚫 Contribute {val} more sessions to unlock!", show_alert=True)
 
-    # Functionality
+    # 3. Callback Functionality
     if data == "owner_panel" and uid == Config.OWNER_ID:
         s = await get_bot_settings()
         kb = [[InlineKeyboardButton(f"Min: {s.get('min_sessions', 3)}", callback_data="set_min"), InlineKeyboardButton(f"F-Sub: @{s.get('force_sub') or 'None'}", callback_data="set_fsub")],
               [InlineKeyboardButton("👤 Sudos", callback_data="list_sudo"), InlineKeyboardButton("🗑 Wipe (DISABLED)", callback_data="wipe_locked")],
               [InlineKeyboardButton("🔙 Back", callback_data="start_back")]]
-        await cb.edit_message_text("⚙️ **Owner Panel**", reply_markup=InlineKeyboardMarkup(kb))
+        await cb.edit_message_text("⚙️ **Owner Panel Settings**", reply_markup=InlineKeyboardMarkup(kb))
 
     elif data == "wipe_locked":
-        await cb.answer("🛡️ System Policy: Wipe is disabled to protect Global Pool.", True)
+        await cb.answer("🛡️ System Policy: Wipe is disabled to protect the Shared Global Pool.", show_alert=True)
 
     elif data == "launch_flow":
         sudo = await is_sudo(uid)
-        if not sudo: return await cb.answer("🚫 Only Sudos can use Global Pool!", True)
+        if not sudo: return await cb.answer("🚫 Only Sudo/Staff can use the Reporter!", show_alert=True)
         
         all_s = await get_sessions()
-        if not all_s: return await cb.answer("❌ Global Pool is empty!", True)
+        if not all_s: return await cb.answer("❌ Global Pool is empty!", show_alert=True)
         
         U_STATE[uid] = {"step": "WAIT_JOIN", "sessions": all_s}
-        await cb.edit_message_text(f"🚀 **Pool Ready:** `{len(all_s)}` Accounts\n\n🔗 Send Invite Link or `/skip`:")
+        await cb.edit_message_text(f"🚀 **Global Pool Sync:** `{len(all_s)}` Active Accounts\n\n🔗 Send Group/Channel Invite Link or `/skip`:")
 
     elif data == "manage_sessions":
         all_s = await get_sessions()
         contributed = await get_user_contribution_count(uid)
         kb = [[InlineKeyboardButton("➕ Add More", callback_data="add_sess_p")], [InlineKeyboardButton("🔙 Back", callback_data="start_back")]]
-        await cb.edit_message_text(f"📂 **Pool Insight**\n━━━━━━━━━━━━\nTotal: **{len(all_s)}** sessions\nYour Work: **{contributed}/3**\n\nAdd sessions to unlock benefits!", reply_markup=InlineKeyboardMarkup(kb))
+        await cb.edit_message_text(f"📂 **Global Pool Insight**\n━━━━━━━━━━━━\nShared Pool: **{len(all_s)}** sessions\nYour Contrib: **{contributed}/3**\n\nHelp the community and contribute more sessions!", reply_markup=InlineKeyboardMarkup(kb))
 
     elif data == "add_sess_p":
         U_STATE[uid] = {"step": "WAIT_SESS_ONLY"}
-        await cb.edit_message_text("💾 **Contribution Pad:**\nSend Pyrogram strings (comma separated):")
+        await cb.edit_message_text("💾 **Contribution Pad:**\nSend your Pyrogram Session strings (comma separated):")
+
+    elif data == "set_min": U_STATE[uid] = {"step": "WAIT_MIN_SESS"}; await cb.edit_message_text("🔢 Enter new Min Pool Limit:")
+    elif data == "set_fsub": U_STATE[uid] = {"step": "WAIT_FSUB"}; await cb.edit_message_text("📢 Enter F-Sub Channel Username (without @):")
+    elif data == "list_sudo":
+        sudos = await get_all_sudos()
+        text = "👤 **Staff Members (Sudos):**\n\n" + "\n".join([f"• `{s}`" for s in sudos])
+        await cb.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ Add", callback_data="add_sudo_p"), InlineKeyboardButton("➖ Rem", callback_data="rem_sudo_p")], [InlineKeyboardButton("🔙 Back", callback_data="owner_panel")]]))
+    
+    elif data == "add_sudo_p": U_STATE[uid] = {"step": "WAIT_ADD_SUDO"}; await cb.edit_message_text("👤 Send User ID to Promote:")
+    elif data == "rem_sudo_p": U_STATE[uid] = {"step": "WAIT_REM_SUDO"}; await cb.edit_message_text("👤 Send User ID to Demote:")
 
     elif data.startswith("rc_"): # Reason Code selection
         U_STATE[uid]["code"] = data.split("_")[1]
         U_STATE[uid]["step"] = "WAIT_DESC"
-        await cb.edit_message_text("✏️ **Reason Details:** Enter short description for report:")
+        await cb.edit_message_text("✏️ **Intelligence Check:** Enter a short description for the report:")
 
 @app.on_message(filters.private & filters.text)
 async def msg_handler(client, message: Message):
@@ -132,30 +146,46 @@ async def msg_handler(client, message: Message):
     if uid not in U_STATE: return
     state = U_STATE[uid]
 
+    # Admin Operation Handlers
+    if uid == Config.OWNER_ID:
+        if state["step"] == "WAIT_MIN_SESS" and txt.isdigit():
+            await update_bot_settings({"min_sessions": int(txt)})
+            await message.reply_text("✅ Global limit updated."); U_STATE.pop(uid); return
+        elif state["step"] == "WAIT_FSUB":
+            await update_bot_settings({"force_sub": txt.replace("@", "").strip()})
+            await message.reply_text("✅ Force Subscription updated."); U_STATE.pop(uid); return
+        elif state["step"] == "WAIT_ADD_SUDO" and txt.isdigit():
+            await add_sudo(int(txt))
+            await message.reply_text(f"✅ User {txt} promoted to Sudo."); U_STATE.pop(uid); return
+        elif state["step"] == "WAIT_REM_SUDO" and txt.isdigit():
+            await remove_sudo(int(txt))
+            await message.reply_text(f"✅ User {txt} demoted."); U_STATE.pop(uid); return
+
+    # User Wizard Logic
     if state["step"] == "WAIT_SESS_ONLY":
         sess = [s.strip() for s in txt.split(",") if len(s.strip()) > 100]
         count = 0
         for s in sess: 
             if await add_session(uid, s): count += 1
-        await message.reply_text(f"✅ {count} sessions added!\nRequirement: 3 total sessions."); U_STATE.pop(uid)
+        await message.reply_text(f"✅ {count} sessions added to Pool!\nUnlock Requirement: 3 total sessions."); U_STATE.pop(uid)
 
     elif state["step"] == "WAIT_JOIN":
         state["join"] = txt if txt != "/skip" else None
         state["step"] = "WAIT_TARGET"
-        await message.reply_text("🎯 **Send Target Link:**")
+        await message.reply_text("🎯 **Send Target Link (Public/Private):**")
 
     elif state["step"] == "WAIT_TARGET":
         try:
             state["cid"], state["mid"] = parse_target(txt)
             state["url"] = txt
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("Spam", callback_data="rc_1"), InlineKeyboardButton("Violence", callback_data="rc_2")], [InlineKeyboardButton("Porn", callback_data="rc_4"), InlineKeyboardButton("Other", callback_data="rc_8")]])
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton("Spam", callback_data="rc_1"), InlineKeyboardButton("Violence", callback_data="rc_2")], [InlineKeyboardButton("Pornography", callback_data="rc_4"), InlineKeyboardButton("Other", callback_data="rc_8")]])
             state["step"] = "WAIT_REASON"
             await message.reply_text("⚖️ **Select Category:**", reply_markup=kb)
-        except: await message.reply_text("❌ Invalid Link!")
+        except Exception as e: await message.reply_text(f"❌ Error: {e}")
 
     elif state["step"] == "WAIT_DESC":
         state["desc"] = txt; state["step"] = "WAIT_COUNT"
-        await message.reply_text("🔢 **Report Count?**")
+        await message.reply_text("🔢 **Enter Report Wave Count:**")
 
     elif state["step"] == "WAIT_COUNT" and txt.isdigit():
         state["count"] = int(txt)
@@ -171,33 +201,38 @@ async def start_instance(s, uid, i, join):
     except: return None
 
 async def process_reports(msg, config):
-    panel = await msg.reply_text("⏳ **Initializing Secure Global Pool...**")
+    panel = await msg.reply_text("⏳ **Initializing Mass Reporting Workers...**")
     uid, sessions = msg.from_user.id, config.get("sessions", [])
     
-    # Parallel thread startup
+    # Fast Parallel Worker Startup
     tasks = [start_instance(s, uid, i, config.get("join")) for i, s in enumerate(sessions)]
-    clients = [c for c in await asyncio.gather(*tasks) if c]
+    results = await asyncio.gather(*tasks)
+    clients = [c for c in results if c]
     
-    if not clients: return await panel.edit_text("❌ All sessions in the pool failed to initialize.")
+    if not clients: return await panel.edit_text("❌ All sessions in the global pool failed to connect.")
     
-    suc, err, tot = 0, 0, config["count"]
-    for i in range(tot):
+    success, failed, total = 0, 0, config["count"]
+    for i in range(total):
+        # Rotate through the active pool workers
         worker = clients[i % len(clients)]
         res = await send_single_report(worker, config["cid"], config["mid"], config["code"], config["desc"])
-        if res: suc += 1
-        else: err += 1
-        if i % 3 == 0 or i == tot-1:
-            try: await panel.edit_text(get_progress_card(config["url"], suc, err, tot, len(clients)))
+        if res: success += 1
+        else: failed += 1
+        
+        # UI Progress Update every 3 hits
+        if i % 3 == 0 or i == total - 1:
+            try: await panel.edit_text(get_progress_card(config["url"], success, failed, total, len(clients)))
             except: pass
         await asyncio.sleep(0.3)
     
+    # Cleanup Workers
     for c in clients: await c.stop()
-    await msg.reply_text(f"🏁 **Execution Detailed:**\nTarget: {config['url']}\nTotal Reports Sent: **{suc}**")
+    await msg.reply_text(f"🏁 **Mission Accomplished!**\nTarget: {config['url']}\nTotal Successful Reports: **{success}**")
 
 async def run_bot():
-    logger.info("Initializing Oxygen Deep Scan Audit...")
-    await cleanup_invalid_sessions()
-    logger.info("Deep Scan Complete. Project Powered UP!")
+    logger.info("Deep Project Setup: Auditing 'startlove' database...")
+    await cleanup_invalid_sessions() # Removes trash from DB on startup
+    logger.info("Audit Finalized. Powering UP Ultimate OxyReport Pro...")
     await app.start(); await idle(); await app.stop()
 
 if __name__ == "__main__":
