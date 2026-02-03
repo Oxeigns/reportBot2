@@ -3,7 +3,7 @@ import logging
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import Config
 
-# Logging setup for monitoring
+# Logging configuration
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("UltimateMongo")
 
@@ -23,12 +23,12 @@ settings_db = db["settings"]
 
 async def add_session(user_id: int, session_str: str):
     """
-    Any user can contribute sessions to the global pool.
-    Uniqueness is maintained via the session string itself.
+    Saves a session to the GLOBAL POOL. 
+    Maintains uniqueness via the session string.
     """
     try:
         session_clean = session_str.strip()
-        if len(session_clean) < 50: # Basic validation
+        if len(session_clean) < 50: 
             return False
             
         await sessions_db.update_one(
@@ -46,10 +46,10 @@ async def add_session(user_id: int, session_str: str):
         logger.error(f"Add session fail: {e}")
         return False
 
-async def get_all_sessions():
+async def get_sessions(ignored_uid=None):
     """
-    Fetches every session for reporting tasks. 
-    Returns a list of strings.
+    FIX: Renamed from get_all_sessions to match main.py imports.
+    Ignores the uid parameter to pull EVERYTHING from the global pool.
     """
     try:
         cursor = sessions_db.find({})
@@ -60,12 +60,11 @@ async def get_all_sessions():
 
 async def delete_all_sessions(request_user_id: int):
     """
-    RESTRICTED: Only the Owner can wipe the database or delete sessions.
-    Loophole Fix: Double-check ID inside the DB layer.
+    RESTRICTED: Only the Owner can wipe the global database.
     """
     if int(request_user_id) != Config.OWNER_ID:
         logger.warning(f"Unauthorized wipe attempt by {request_user_id}")
-        return "DENIED" # Safety trigger
+        return "DENIED"
         
     try:
         await sessions_db.delete_many({})
@@ -86,10 +85,11 @@ async def is_sudo(user_id: int):
     res = await sudo_db.find_one({"user_id": uid})
     return bool(res)
 
-async def add_sudo(user_id: int, request_user_id: int):
-    """Only Owner can promote users to Sudo."""
-    if int(request_user_id) != Config.OWNER_ID:
-        return False
+async def add_sudo(user_id: int):
+    """
+    Logic matched to main.py call signature.
+    Owner check happens in main.py before calling this.
+    """
     await sudo_db.update_one(
         {"user_id": int(user_id)}, 
         {"$set": {"user_id": int(user_id)}}, 
@@ -97,10 +97,8 @@ async def add_sudo(user_id: int, request_user_id: int):
     )
     return True
 
-async def remove_sudo(user_id: int, request_user_id: int):
-    """Only Owner can demote Sudo users."""
-    if int(request_user_id) != Config.OWNER_ID:
-        return False
+async def remove_sudo(user_id: int):
+    """Logic matched to main.py call signature."""
     await sudo_db.delete_one({"user_id": int(user_id)})
     return True
 
@@ -113,7 +111,7 @@ async def get_all_sudos():
 # ==========================================
 
 async def get_bot_settings():
-    """Retrieves config like Force Sub and Min Sessions."""
+    """Retrieves global config with safety repairs."""
     try:
         settings = await settings_db.find_one({"id": "bot_config"})
         if not settings:
@@ -125,7 +123,7 @@ async def get_bot_settings():
             await settings_db.insert_one(default)
             return default
         
-        # Stability repair
+        # Repair missing keys
         if "min_sessions" not in settings: settings["min_sessions"] = Config.DEFAULT_MIN_SESSIONS
         if "force_sub" not in settings: settings["force_sub"] = None
         
@@ -134,9 +132,12 @@ async def get_bot_settings():
         logger.error(f"Settings retrieval error: {e}")
         return {"min_sessions": Config.DEFAULT_MIN_SESSIONS, "force_sub": None}
 
-async def update_bot_settings(updates: dict, request_user_id: int):
-    """Only Owner can change global bot settings."""
-    if int(request_user_id) != Config.OWNER_ID:
+async def update_bot_settings(updates: dict, request_user_id: int = None):
+    """
+    Updates global settings. 
+    request_user_id is optional to match various main.py call styles.
+    """
+    if request_user_id and int(request_user_id) != Config.OWNER_ID:
         return False
     await settings_db.update_one({"id": "bot_config"}, {"$set": updates}, upsert=True)
     return True
