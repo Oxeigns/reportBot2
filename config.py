@@ -2,21 +2,35 @@
 import os
 
 class Config:
-    # Telegram API Details (Get from my.telegram.org)
-    API_ID = int(os.environ.get("API_ID", "12345")) # Replace or set in Env
+    """
+    Ultimate OxyReport Pro v3.0 - Configuration Management
+    Set these values as Environment Variables on Heroku/VPS.
+    """
+    
+    # --- Telegram API Credentials ---
+    # Get these from https://my.telegram.org
+    API_ID = int(os.environ.get("API_ID", 12345)) 
     API_HASH = os.environ.get("API_HASH", "your_api_hash")
     
-    # Bot Token (Get from @BotFather)
+    # --- Bot Credentials ---
+    # Get from @BotFather
     BOT_TOKEN = os.environ.get("BOT_TOKEN", "your_bot_token")
     
-    # Owner ID (Your personal Telegram ID)
-    OWNER_ID = int(os.environ.get("OWNER_ID", "00000000"))
+    # --- Administrative Control ---
+    # Your personal Telegram User ID (Get from @userinfobot)
+    OWNER_ID = int(os.environ.get("OWNER_ID", 0))
     
-    # MongoDB URL (Get from mongodb.com)
-    MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://...")
+    # --- Persistent Storage ---
+    # MongoDB Connection String (Get from https://mongodb.com)
+    MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://your_url_here")
     
-    # Default Bot Settings
-    DEFAULT_MIN_SESSIONS = 3
+    # --- Logic & Restrictions ---
+    # Default minimum sessions required for non-sudo users
+    DEFAULT_MIN_SESSIONS = int(os.environ.get("DEFAULT_MIN_SESSIONS", 3))
     
-    # Command Prefixes
+    # Supported command prefixes for the bot
     PREFIX = ["/", "!", "."]
+    
+    # --- Optimization ---
+    # Maximum concurrent session logins during task start
+    MAX_CONCURRENT_STARTUP = 5
