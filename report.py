@@ -9,20 +9,21 @@ logger = logging.getLogger(__name__)
 
 async def send_single_report(client: Client, chat_id: int | str, msg_id: int | None, reason_code: str, description: str):
     """
-    ULTIMATE REPORT ENGINE: 
-    Executes raw MTProto calls for mass reporting with intelligent throttling.
+    ULTIMATE REPORT ENGINE v3.1: 
+    Fixed 'Peer Id Invalid' and 'Initializing' hang issues.
     """
     try:
-        # 1. PEER RESOLUTION (With fail-safe)
+        # 1. ROBUST PEER RESOLUTION
         try:
+            # Try direct resolution first
             peer = await client.resolve_peer(chat_id)
-        except (PeerIdInvalid, ChannelInvalid):
-            # In case the session hasn't seen the chat, try fetching it first
+        except (PeerIdInvalid, ChannelInvalid, KeyError, ValueError):
+            # Fallback: Force session to fetch chat metadata
             try:
                 chat = await client.get_chat(chat_id)
                 peer = await client.resolve_peer(chat.id)
             except Exception as e:
-                logger.error(f"Failed to resolve peer on {client.name}: {e}")
+                logger.error(f"Worker {client.name} - Peer Resolution Failed: {e}")
                 return False
 
         # 2. REASON MAPPING
@@ -36,12 +37,10 @@ async def send_single_report(client: Client, chat_id: int | str, msg_id: int | N
             '7': types.InputReportReasonPersonalDetails(),
             '8': types.InputReportReasonOther()
         }
-        
         selected_reason = reasons.get(str(reason_code), types.InputReportReasonOther())
 
-        # 3. EXECUTION LOGIC
+        # 3. EXECUTION
         if msg_id:
-            # Report a specific Message (Targeted Reporting)
             await client.invoke(
                 functions.messages.Report(
                     peer=peer,
@@ -51,7 +50,6 @@ async def send_single_report(client: Client, chat_id: int | str, msg_id: int | N
                 )
             )
         else:
-            # Report Peer/Entity (Channel, User, or Bot)
             await client.invoke(
                 functions.account.ReportPeer(
                     peer=peer,
@@ -59,25 +57,17 @@ async def send_single_report(client: Client, chat_id: int | str, msg_id: int | N
                     message=description
                 )
             )
-        
-        logger.info(f"Report sent successfully using session: {client.name}")
         return True
 
     except FloodWait as e:
-        # CRITICAL: Prevent bot from hanging on 24h+ bans
-        if e.value > 600: # If wait is > 10 minutes, skip this worker for now
-            logger.warning(f"Session {client.name} huge FloodWait ({e.value}s). Skipping.")
+        # SKIP if flood is too long (> 2 minutes) to keep reporting fast
+        if e.value > 120:
+            logger.warning(f"Worker {client.name} skipped: {e.value}s FloodWait")
             return False
-            
-        logger.warning(f"Throttling session {client.name}: Sleeping {e.value}s")
         await asyncio.sleep(e.value)
         return await send_single_report(client, chat_id, msg_id, reason_code, description)
 
-    except RPCError as e:
-        # Handles Internal API errors safely
-        logger.debug(f"RPC Error on {client.name}: {e.message}")
+    except RPCError:
         return False
-
-    except Exception as e:
-        logger.error(f"Report Engine Error: {e}")
+    except Exception:
         return False
